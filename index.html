@@ -46,7 +46,7 @@
         scene.add(ambient);
 
         // ✅ กล้อง
-        camera.position.set(0, 2, 5);
+        camera.position.set(0, 1, 5);
         camera.lookAt(0, 0, 0);
 
         // ✅ กล่อง
@@ -75,9 +75,24 @@
         plane.position.y = -0.5;
         plane.receiveShadow = true; // ✅ พื้นรับเงา
         scene.add(plane);
+        window.addEventListener('keydown',(event)=>{
+            if(event.key == 'w'){
+                cube.position.y +=0.2;
+            }
+            if(event.key == 's'){
+                cube.position.y -=0.2;
+            }
+            if(event.key== 'a'){
+                cube.position.x -=0.2;
+            }
+            if(event.key == 'd'){
+                cube.position.x +=0.2;
+            }
+        })
+
         // ✅ render loop
         function animate(t) {
-            cube.rotation.z = t * 0.01;
+            cube.rotation.x = t * 0.001;
             cube.rotation.y = t * 0.001;
 
             sphere.rotation.y = t * 0.001;
