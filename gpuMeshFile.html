@@ -49,7 +49,7 @@
         scene.add(light);
         // ✅ โหลดโมเดล OBJ
         const loader = new THREE.OBJLoader();
-        loader.load('Model1.obj', function (object) {
+        loader.load('Chair.obj', function (object) {
             // ตั้งค่า castShadow กับทุก mesh ใน object
             object.traverse(function (child) {
                 if (child.isMesh) {
