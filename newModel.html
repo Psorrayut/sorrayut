@@ -1,118 +1,168 @@
 <!DOCTYPE html>
-<html>
-
+<html lang="en">
 <head>
-    <title>GPU Shadow</title>
-    <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>GPU Shadow + GUI</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+  </style>
 </head>
-
 <body>
-    <!-- core three.js -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/EXRLoader.js"></script>
-    <script>
+  <!-- core three.js -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/EXRLoader.js"></script>
+  <!-- dat.GUI -->
+  <script src="https://cdn.jsdelivr.net/npm/dat.gui@0.7.9/build/dat.gui.min.js"></script>
 
-        const renderer = new THREE.WebGLRenderer();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMap.enabled = true; // ✅ เปิดใช้งานเงา!
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  <script>
+    const renderer = new THREE.WebGLRenderer({ antialias:true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
 
-        document.body.appendChild(renderer.domElement);
+    const scene = new THREE.Scene();
 
-        const scene = new THREE.Scene();
+    // Camera & Controls
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 2, 5);
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
 
-        // ✅ กล้อง
-        const camera = new THREE.PerspectiveCamera(
-            75,
-            window.innerWidth / window.innerHeight,
-            0.1,
-            1000
-        );
-        camera.position.set(0, 2, 5);
-        camera.lookAt(0, 0, 0);
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        // ✅ Directional Light ที่สร้างเงา
-        const light = new THREE.DirectionalLight(0xffffff, 1);
-        light.position.set(5, 10, 5);
-        light.castShadow = true;
-        light.shadow.mapSize.width = 1024;
-        light.shadow.mapSize.height = 1024;
-        light.shadow.camera.near = 0.5;
-        light.shadow.camera.far = 50;
+    // Directional Light
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(5, 10, 5);
+    light.castShadow = true;
+    light.shadow.mapSize.set(1024, 1024);
+    light.shadow.camera.near = 0.5;
+    light.shadow.camera.far = 50;
+    scene.add(light);
 
-        scene.add(light);
-        const textureLoader = new THREE.TextureLoader();
-    const baseColorMap = textureLoader.load('https://psorrayut.github.io/sorrayut/Low_Mech2_BaseColor.png')
+    // Ambient Light
+    scene.add(new THREE.AmbientLight(0x404040));
 
-        // ✅ โหลดโมเดล OBJ
-        const loader = new THREE.OBJLoader();
-        loader.load('https://psorrayut.github.io/sorrayut/gundam.obj', function (object) {
-            // ตั้งค่า castShadow กับทุก mesh ใน object
-            object.traverse(function (child) {
-                if (child.isMesh) {
-                    child.material = new THREE.MeshStandardMaterial({
-                map: baseColorMap,   // ใส่ base color texture
-                roughness: 0.6,      // ปรับความด้าน
-                metalness: 0.3       // ปรับความเป็นโลหะ
-            });
+    // Base color texture สีหุ่นยนต์
+    const textureLoader = new THREE.TextureLoader();
+    const baseColorMap = textureLoader.load(
+      'https://psorrayut.github.io/sorrayut/Low_Mech2_BaseColor.png'
+    );
+    // สีบ้าน
+   const textureLoader2 = new THREE.TextureLoader();
+const baseColorMap2 = textureLoader2.load(
+  'https://psorrayut.github.io/sorrayut/building.jpeg'
+);
 
-                    child.castShadow = true;
-                    child.receiveShadow = true;
-                }
-            });
-            scene.add(object);
-        }, undefined, function (error) {
-            console.error('Error loading OBJ:', error);
-        });
+    // Load OBJ หุ่นยนต์
+    const loader = new THREE.OBJLoader();
+    loader.load('https://psorrayut.github.io/sorrayut/gundam.obj', function (object) {
+      object.traverse(function (child) {
+        if (child.isMesh) {
+          child.material = new THREE.MeshStandardMaterial({
+            map: baseColorMap,
+            roughness: 0.6,
+            metalness: 0.3
+          });
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+      scene.add(object);
+    });
+    // โหลดตึก
+     const loader2 = new THREE.OBJLoader();
+    loader2.load('https://psorrayut.github.io/sorrayut/tower.obj', function (object2) {
+    object2.traverse(function (child) {
+    if (child.isMesh) {
+      child.material = new THREE.MeshStandardMaterial({
+        map: baseColorMap2,
+        roughness: 0.6,
+        metalness: 0.3
+      });
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+    object2.scale.set(0.1, 0.1, 0.1);
+    object2.position.set(1,0,1.5);
+  scene.add(object2);
+});
+//โหลดตึกอันที่3
+const tower2 = new THREE.OBJLoader();
+    tower2.load('https://psorrayut.github.io/sorrayut/tower.obj', function (object3) {
+    object3.traverse(function (child) {
+    if (child.isMesh) {
+      child.material = new THREE.MeshStandardMaterial({
+        map: baseColorMap2,
+        roughness: 0.6,
+        metalness: 0.3
+      });
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+    object3.scale.set(0.1, 0.1, 0.1);
+    object3.position.set(-1,0,1.5);
+  scene.add(object3);
+});
+// texture พื้นหลัง
+    const blackgroud = new THREE.TextureLoader();
+    const bg = textureLoader.load(
+      'https://psorrayut.github.io/sorrayut/evan.jpg'
+    );
+    // texture พื้น
+    const evanloader = new THREE.TextureLoader();
+    // โหลด texture evan2.jpg
+    evanloader.load('https://psorrayut.github.io/sorrayut/evan5.jpg', function (texture) {
+  texture.needsUpdate = true;
 
-
-        // ✅ Ambient Light เล็กน้อยให้สว่างรวม
-        const ambient = new THREE.AmbientLight(0x404040);
-        scene.add(ambient);
-        const exrLoader = new THREE.EXRLoader();
-exrLoader.load('https://psorrayut.github.io/sorrayut/passendorf_snow_1k.exr', function (texture) {
-    texture.mapping = THREE.EquirectangularReflectionMapping;
-    texture.needsUpdate = true;
-
-    // ✅ พื้น (สร้างหลังจากโหลด texture เสร็จแล้ว)
-    const planeGeometry = new THREE.PlaneGeometry(10, 10);
-    const planeMaterial = new THREE.MeshStandardMaterial({ 
+      // plane พื้น
+      const planeGeo = new THREE.PlaneGeometry(10, 10);
+      const planeMat = new THREE.MeshStandardMaterial({ 
         map: texture,
         roughness: 0.6,
         metalness: 0.2,
         color: 0xffffff
+      });
+      const plane = new THREE.Mesh(planeGeo, planeMat);
+      plane.rotation.x = -Math.PI/2;
+      plane.position.y = 0;
+      plane.receiveShadow = true;
+      scene.add(plane);
+
+      // set background
+      scene.background = bg;
     });
-    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-    plane.rotation.x = -Math.PI / 2;
-    plane.position.y = 0;
-    plane.receiveShadow = true;
-    scene.add(plane);
-});
-        const loaderBG = new THREE.EXRLoader();
-exrLoader.load('https://psorrayut.github.io/sorrayut/passendorf_snow_1k.exr', function (texture2) {
-    scene.background = texture2; 
-});
 
-        // ✅ render loop
-        function animate(t) {
+    // ---------- dat.GUI ----------
+    const gui = new dat.GUI();
+    const params = {
+      lightX: light.position.x,
+      lightY: light.position.y,
+      lightZ: light.position.z,
+      intensity: light.intensity,
+      color: '#ffffff'
+    };
 
-            renderer.render(scene, camera);
-            requestAnimationFrame(animate);
-        }
-        animate(0);
+    gui.add(params, 'lightX', -20, 20).onChange(v => light.position.x = v);
+    gui.add(params, 'lightY',  0, 20).onChange(v => light.position.y = v);
+    gui.add(params, 'lightZ', -20, 20).onChange(v => light.position.z = v);
+    gui.add(params, 'intensity', 0, 2).onChange(v => light.intensity = v);
+    gui.addColor(params, 'color').onChange(v => light.color.set(v));
 
-        window.addEventListener('keydown', (event) => {
+    // ---------- render loop ----------
+    function animate() {
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    animate();
 
-        });
-
-    </script>
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
 </body>
-
 </html>
