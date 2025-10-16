@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <title>Driving in City • Three.js</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    canvas { display: block; }
+    #debug {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      color: lime;
+      font-family: monospace;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+    .dialog-box {
+      position: absolute;
+      bottom: 50px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 300px;
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      font-family: sans-serif;
+      border: 2px solid #fff;
+      border-radius: 8px;
+      padding: 15px;
+      text-align: center;
+      z-index: 10;
+    }
+    .dialog-box.hidden {
+      display: none;
+    }
+    .dialog-content button {
+      margin-top: 10px;
+      padding: 5px 10px;
+      background: #ff69b4;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .dialog-content button:hover {
+      background: #ff85c1;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.18"></script>
+</head>
+<body>
+  <div id="debug">
+    กด F = สลับโหมดติดตามรถ<br>
+    กด ESC = ปลดล็อคกล้อง<br>
+    WASD = ขับรถ<br>
+    คลิกลาก = หมุนกล้อง<br>
+    ล้อเมาส์ = ซูม
+  </div>
+  <div id="dialog" class="dialog-box hidden">
+    <div class="dialog-content">
+      <p id="dialog-text">สวัสดี! ฉันคือ Maid NPC 👋</p>
+      <button id="dialog-close">ปิด</button>
+    </div>
+  </div>
+  <script>
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+   renderer.setSize(innerWidth, innerHeight);
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.shadowMap.enabled = true;
+  renderer.physicallyCorrectLights = true;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene(); 
+
+    // Camera & Controls
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 20, 8);
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableZoom = true;
+    controls.zoomSpeed = 1.5;
+    controls.minDistance = 2;
+    controls.maxDistance = 100;
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2.2;
+    controls.enablePan = true;
+    controls.panSpeed = 1.0;
+    
+ 
+
+  new THREE.OrbitControls(camera, renderer.domElement);
+    // Lights - ลดความสว่าง
+    const hemiLight = new THREE.HemisphereLight(0xffe08a, 0xff6f61, 0.6);
+    scene.add(hemiLight);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+    scene.add(ambientLight);
+    const light = new THREE.DirectionalLight(0xFFAA33, 0.6);
+    light.position.set(20, 30, 10);
+    light.castShadow = true;
+    light.shadow.mapSize.set(2048, 2048);
+    light.shadow.camera.left = -50;
+    light.shadow.camera.right = 50;
+    light.shadow.camera.top = 50;
+    light.shadow.camera.bottom = -50;
+    scene.add(light);
+    // 🌞 สร้างพระอาทิตย์ (Directional Light)
+    const sunLight = new THREE.DirectionalLight(0xffffff, 3);
+    sunLight.position.set(50, 100, 50); // เริ่มต้น: แสงจากทิศตะวันออกเฉียงบน
+    sunLight.castShadow = true;
+    scene.add(sunLight);
+
+
+    // 🪄 GUI สำหรับปรับแสง
+    const gui = new lil.GUI();
+    const sunFolder = gui.addFolder('☀️ Sun Light Control');
+
+    const sunParams = {
+     azimuth: 45,  // มุมหมุนรอบ (ทิศตะวันตก-ตะวันออก)
+      elevation: 45, // มุมเงย (สูงหรือต่ำ)
+      distance: 100, // ระยะจากจุดศูนย์กลาง (ศูนย์กลางของ Gundam)
+    };
+
+// ตำแหน่งศูนย์กลางที่อยากให้แสงหมุนรอบ (จุด Gundam)
+    const sunTarget = new THREE.Vector3(50, 0, -30);
+
+  function updateSunPosition() {
+  const az = THREE.MathUtils.degToRad(sunParams.azimuth);
+  const el = THREE.MathUtils.degToRad(sunParams.elevation);
+
+  sunLight.position.set(
+    sunTarget.x + Math.cos(el) * Math.sin(az) * sunParams.distance,
+    sunTarget.y + Math.sin(el) * sunParams.distance,
+    sunTarget.z + Math.cos(el) * Math.cos(az) * sunParams.distance
+  );
+  sunLight.target.position.copy(sunTarget);
+  sunLight.target.updateMatrixWorld();
+
+}
+
+// สร้าง sliders
+sunFolder.add(sunParams, 'azimuth', 0, 360, 1).onChange(updateSunPosition);
+sunFolder.add(sunParams, 'elevation', 0, 90, 1).onChange(updateSunPosition);
+sunFolder.add(sunParams, 'distance', 10, 200, 1).onChange(updateSunPosition);
+
+updateSunPosition();
+
+    const uniforms = {
+      uColor: { value: new THREE.Color(0xFFA570) },
+      uLightDir: { value: new THREE.Vector3(0.5, 1.0, 0.3).normalize() },
+      uTime: { value: 0.0 }
+    };
+    scene.add(new THREE.AmbientLight(0xFFD4A3, 0.3));
+    scene.add(new THREE.AmbientLight(0x404040, 0.5));
+
+    // Shaders
+    const diamondVert = `
+      uniform float uTime;
+      varying vec3 vNormal;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vec3 pos = position;
+        pos.y += sin(uTime * 2.0) * 0.2;
+        float angle = sin(uTime) * 0.5; 
+        mat3 rotY = mat3(
+          cos(angle), 0.0, sin(angle),
+          0.0, 1.0, 0.0,
+          -sin(angle), 0.0, cos(angle)
+        );
+        pos = rotY * pos;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+    `;
+
+    const diamondFrag = `
+      varying vec3 vNormal;
+      void main() {
+        float g = dot(vNormal, vec3(0.0, 1.0, 0.0)) * 0.5 + 0.5;
+        vec3 color = mix(vec3(1.0, 0.2, 0.6), vec3(1.0, 0.6, 0.9), g);
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `;
+
+    // ตัวแปร
+    let car, mixerCar, mixerMaid, maid, mixerfont, fontname, mixerport, mixercat, cat, rig, mixerrig,chair,mixxerchair,font2,mixerfont2,gundam;
+    const clickable = [];
+    
+    let cameraTarget = new THREE.Vector3();
+    let cameraPosition = new THREE.Vector3();
+    let isAutoCamera = false;
+    let followCar = true;
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+
+    function setPointer(e) {
+      const r = renderer.domElement.getBoundingClientRect();
+      const x = (e.clientX ?? e.touches[0].clientX) - r.left;
+      const y = (e.clientY ?? e.touches[0].clientY) - r.top;
+      pointer.x = (x / r.width) * 2 - 1;
+      pointer.y = -(y / r.height) * 2 + 1;
+    }
+
+    function onPick(e) {
+      e.preventDefault();
+      setPointer(e);
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(clickable, true);
+
+      if (hits.length === 0) return;
+
+      const hit = hits[0];
+      isAutoCamera = true;
+      controls.enabled = false;
+      followCar = false;
+
+      let targetObject = hit.object;
+      while (targetObject.parent && targetObject.parent.type !== 'Scene') {
+        targetObject = targetObject.parent;
+      }
+
+      let targetPos;
+      if (hit.object.name === 'maid_marker' && maid) {
+        const dialog = document.getElementById('dialog');
+        const dialogText = document.getElementById('dialog-text');
+        dialogText.textContent = "สวัสดี! ฉันคือ Maid NPC 👋 ยินดีที่ได้พบ!";
+        dialog.classList.remove('hidden');
+        targetPos = maid.position.clone();
+      } else {
+        const box = new THREE.Box3().setFromObject(targetObject);
+        targetPos = box.getCenter(new THREE.Vector3());
+      }
+      cameraTarget.copy(targetPos);
+      cameraPosition.set(targetPos.x - 5, targetPos.y + 3, targetPos.z);
+      let targetPos2;
+      if(hit.object.name === 'gundam_marker' && gundam){
+     const dialog = document.getElementById('dialog');
+      const dialogText = document.getElementById('dialog-text');
+      dialogText.textContent = "นี่คือ Gundam!";
+      dialog.classList.remove('hidden');
+      targetPos2 = gundam.position.clone();
+      const box = new THREE.Box3().setFromObject(gundam);
+      const center = box.getCenter(new THREE.Vector3());
+
+      cameraTarget.copy(targetPos2);
+      cameraPosition.set(targetPos2.x -14, targetPos2.y +10, targetPos2.z);
+      }
+    }
+
+    document.getElementById('dialog-close').addEventListener('click', () => {
+      document.getElementById('dialog').classList.add('hidden');
+      // กลับไปติดตามรถ
+      isAutoCamera = false;
+      followCar = true;
+      controls.enabled = false;
+    });
+
+    renderer.domElement.addEventListener('click', onPick);
+    renderer.domElement.addEventListener('touchend', (e) => { onPick(e); }, { passive: true });
+    renderer.domElement.addEventListener('mousemove', (e) => {
+      setPointer(e);
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(clickable, true);
+      renderer.domElement.style.cursor = hits.length > 0 ? 'pointer' : 'default';
+    });
+
+    // Keyboard Controls
+    const keys = {};
+    document.addEventListener('keydown', (e) => { 
+      keys[e.key.toLowerCase()] = true;
+      if (e.key.toLowerCase() === 'f') {
+        followCar = !followCar;
+        controls.enabled = !followCar;
+        console.log('Follow Car:', followCar ? 'ON' : 'OFF');
+      }
+    });
+    document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+
+    const speed = 0.1;
+    const rotateSpeed = 0.04;
+
+    function updateCar() {
+      if (!car) return;
+
+      if (keys['w'] || keys['s'] || keys['a'] || keys['d']) {
+        if (!followCar) {
+          followCar = true;
+          controls.enabled = false;
+        }
+      }
+
+      if (keys['escape']) {
+        isAutoCamera = false;
+        followCar = false;
+        controls.enabled = true;
+      }
+
+      if (keys['w']) {
+        car.position.x += speed * Math.sin(car.rotation.y);
+        car.position.z += speed * Math.cos(car.rotation.y);
+      }
+      if (keys['s']) {
+        car.position.x -= speed * Math.sin(car.rotation.y);
+        car.position.z -= speed * Math.cos(car.rotation.y);
+      }
+      if (keys['a']) { car.rotation.y += rotateSpeed; }
+      if (keys['d']) { car.rotation.y -= rotateSpeed; }
+    }
+
+    function updateCamera() {
+      if (!car) return;
+      
+      if (isAutoCamera) {
+        camera.position.lerp(cameraPosition, 0.05);
+        controls.target.lerp(cameraTarget, 0.05);
+      } else if (followCar) {
+        const offset = new THREE.Vector3(
+          -Math.sin(car.rotation.y) * 8,
+          3,
+          -Math.cos(car.rotation.y) * 8
+        );
+        const targetPos = car.position.clone().add(offset);
+        camera.position.lerp(targetPos, 0.1);
+        controls.target.lerp(car.position, 0.1);
+      }
+    }
+
+    // โหลดรถ
+    const carLoader = new THREE.GLTFLoader();
+    carLoader.load('https://psorrayut.github.io/sorrayut/flyingcar.glb',
+      function (gltf) {
+        car = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerCar = new THREE.AnimationMixer(car);
+          gltf.animations.forEach((clip) => {
+            mixerCar.clipAction(clip).play();
+          });
+        }
+        car.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        car.rotation.y = Math.PI / 2;
+        car.position.set(0, 0.5, 10);
+        scene.add(car);
+      }
+    );
+
+    // โหลด rig
+    const rigLoader = new THREE.GLTFLoader();
+    rigLoader.load('https://psorrayut.github.io/sorrayut/rigging2.glb',
+      function (gltf) {
+        rig = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerrig = new THREE.AnimationMixer(rig);
+          gltf.animations.forEach((clip) => {
+            mixerrig.clipAction(clip).play();
+          });
+        }
+        rig.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        rig.rotation.y = -Math.PI / 2;
+        rig.position.set(50, 4, 20);
+        scene.add(rig);
+      }
+    );
+
+    // โหลด cat - แก้ไขแล้ว
+    const catLoader = new THREE.GLTFLoader();
+    catLoader.load('https://psorrayut.github.io/sorrayut/cat7.glb',
+      function (gltf) {
+        cat = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixercat = new THREE.AnimationMixer(cat);
+          gltf.animations.forEach((clip) => {
+            mixercat.clipAction(clip).play();
+          });
+        }
+        cat.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        cat.rotation.y = -Math.PI / 2;
+        cat.scale.set(3, 3, 3);
+        cat.position.set(50, 4, 0);
+        scene.add(cat);
+      }
+    );
+  // โหลด เก้าอี้ - แก้ไขแล้ว
+    const chairLoader = new THREE.GLTFLoader();
+    chairLoader.load('https://psorrayut.github.io/sorrayut/Chair.glb',
+      function (gltf) {
+        chair = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixxerchair = new THREE.AnimationMixer(chair);
+          gltf.animations.forEach((clip) => {
+            mixxerchair.clipAction(clip).play();
+          });
+        }
+        chair.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        chair.rotation.y = -Math.PI / 2;
+        chair.scale.set(4, 4, 4);
+        chair.position.set(50, 0, -15);
+        scene.add(chair);
+      }
+    );
+    // โหลด texture
+    const textureLoader = new THREE.TextureLoader();
+    const bgfont = textureLoader.load('https://psorrayut.github.io/sorrayut/heart pixel art 254x254.png');
+    bgfont.magFilter = THREE.NearestFilter;
+    bgfont.minFilter = THREE.NearestFilter;
+
+    // โหลด font
+    const font = new THREE.GLTFLoader();
+    font.load('https://psorrayut.github.io/sorrayut/fontname2.glb',
+      function (gltf) {
+        fontname = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerfont = new THREE.AnimationMixer(fontname);
+          gltf.animations.forEach((clip) => {
+            const action = mixerfont.clipAction(clip);
+            action.setLoop(THREE.LoopOnce);
+            action.clampWhenFinished = true;
+            action.play();
+          });
+        }
+        fontname.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            if (child.material) {
+              child.material.map = bgfont;
+              child.material.needsUpdate = true;
+            }
+          }
+        });
+        fontname.rotation.y = -Math.PI / 2;
+        fontname.scale.set(2, 2, 2);
+        fontname.position.set(20, 5, 0);
+        scene.add(fontname);
+      }
+    );
+      const fontloader = new THREE.GLTFLoader();
+    fontloader.load('https://psorrayut.github.io/sorrayut/Name3.glb',
+      function (gltf) {
+        font2 = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerfont2 = new THREE.AnimationMixer(font2);
+          gltf.animations.forEach((clip) => {
+            const action = mixerfont2.clipAction(clip);
+            action.setLoop(THREE.LoopOnce);
+            action.clampWhenFinished = true;
+            action.play();
+          });
+        }
+        font2.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        font2.rotation.y = -Math.PI / 2;
+        font2.scale.set(2, 2, 2);
+        font2.position.set(20, 1, 40);
+        scene.add(font2);
+      }
+    );
+        const logoloader = new THREE.GLTFLoader();
+    logoloader.load('https://psorrayut.github.io/sorrayut/logo.glb',
+      function (gltf) {
+        const logo = gltf.scene;
+        logo.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+          }
+        });
+        logo.rotation.y = -Math.PI / 2;
+        logo.position.set(60, 4, -20);
+        logo.scale.set(6, 6, 6);
+        scene.add(logo);
+      }
+    );
+    // โหลด maid
+    const maidLoader = new THREE.GLTFLoader();
+    maidLoader.load('https://psorrayut.github.io/sorrayut/merchant.glb',
+      function (gltf) {
+        maid = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerMaid = new THREE.AnimationMixer(maid);
+          gltf.animations.forEach((clip) => {
+            mixerMaid.clipAction(clip).play();
+          });
+        }
+        maid.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            child.name = 'maid_mesh';
+            clickable.push(child);
+          }
+        });
+        maid.rotation.y = -Math.PI / 2;
+        maid.position.set(-2, 0, 0);
+        maid.name = 'maid';
+        scene.add(maid);
+
+        const markerGeo = new THREE.OctahedronGeometry(0.6, 0);
+        const markerMat = new THREE.ShaderMaterial({
+          vertexShader: diamondVert,
+          fragmentShader: diamondFrag,
+          uniforms,
+          side: THREE.DoubleSide,
+        });
+        const marker = new THREE.Mesh(markerGeo, markerMat);
+        marker.position.copy(maid.position);
+        marker.position.y += 5;
+        scene.add(marker);
+
+        const maidLight = new THREE.PointLight(0xff0000, 1, 10);
+        maidLight.position.copy(maid.position);
+        maidLight.position.y += 3;
+        scene.add(maidLight);
+
+        marker.name = 'maid_marker';
+        clickable.push(marker);
+      }
+    );
+
+    // โหลด background
+    const bgLoader = new THREE.GLTFLoader();
+    bgLoader.load('https://psorrayut.github.io/sorrayut/bg2.glb',
+      function (gltf) {
+        const bgModel = gltf.scene;
+        bgModel.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+          }
+        });
+        bgModel.position.set(0, 0, 0);
+        scene.add(bgModel);
+      }
+    );
+    //โหลด gundam
+    const gundamLoader = new THREE.GLTFLoader();
+    gundamLoader.load('https://psorrayut.github.io/sorrayut/gundam.glb',
+   function (gltf) {
+    gundam = gltf.scene;
+    gundam.traverse(function (child) {
+      if (child.isMesh) {
+        child.receiveShadow = true;
+        child.castShadow = true;
+      }
+    });
+    gundam.rotation.y = -Math.PI / 2;
+    gundam.position.set(50, 0, -30);
+    gundam.scale.set(20, 20, 20);
+    scene.add(gundam);
+
+    // ✅ สร้าง marker สำหรับ Gundam (แก้ตัวแปรให้ถูก)
+    const markerGeo2 = new THREE.OctahedronGeometry(0.6, 0);
+    const markerMat2 = new THREE.ShaderMaterial({
+      vertexShader: diamondVert,
+      fragmentShader: diamondFrag,
+      uniforms,
+      side: THREE.DoubleSide,
+    });
+    const marker2 = new THREE.Mesh(markerGeo2, markerMat2);
+    marker2.position.copy(gundam.position);
+    marker2.scale.set(2,2,2);
+    marker2.position.y += 15; // ปรับให้ลอยสูงเหนือหัว Gundam
+    marker2.name = 'gundam_marker';
+    scene.add(marker2);
+    
+    // ✅ เพิ่มเข้า clickable ด้วย
+    clickable.push(marker2);
+  
+  }
+);
+    // โหลด port
+    const port = new THREE.GLTFLoader();
+    port.load('https://psorrayut.github.io/sorrayut/port.glb',
+      function (gltf) {
+        const portloader = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerport = new THREE.AnimationMixer(portloader);
+          gltf.animations.forEach((clip) => {
+            const action = mixerport.clipAction(clip);
+            action.setLoop(THREE.LoopOnce);
+            action.clampWhenFinished = true;
+            action.play();
+          });
+        }
+        portloader.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+          }
+        });
+        portloader.rotation.y = -Math.PI / 2;
+        portloader.scale.set(5, 5, 5);
+        portloader.position.set(50, 4, -40);
+        scene.add(portloader);
+      }
+    );
+
+    // Resize Handler
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    // Animation Loop
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      if (mixerCar) mixerCar.update(delta);
+      if (mixerMaid) mixerMaid.update(delta);
+      if (mixerfont) mixerfont.update(delta);
+      if (mixerport) mixerport.update(delta);
+      if (mixercat) mixercat.update(delta);
+      if (mixerrig) mixerrig.update(delta);
+      if(mixxerchair) mixxerchair.update(delta);
+      if(mixerfont2) mixerfont2.update(delta);
+      uniforms.uTime.value = clock.getElapsedTime();
+      updateCar();
+      updateCamera();
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
