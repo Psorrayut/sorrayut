@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <title>Driving in City • Three.js</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    canvas { display: block; }
+    #debug {
+      position: absolute;
+      bottom: 10px;
+      left: 10px;
+      color: lime;
+      font-family: monospace;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+    .dialog-box {
+      position: absolute;
+      bottom: 50px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 300px;
+      background: rgba(0,0,0,0.8);
+      color: #fff;
+      font-family: sans-serif;
+      border: 2px solid #fff;
+      border-radius: 8px;
+      padding: 15px;
+      text-align: center;
+      z-index: 10;
+    }
+    .dialog-box.hidden {
+      display: none;
+    }
+    .dialog-content button {
+      margin-top: 10px;
+      padding: 5px 10px;
+      background: #ff69b4;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .dialog-content button:hover {
+      background: #ff85c1;
+    }
+    .progress-bar-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      background: radial-gradient(circle, #a8e6cf 0%, #56c596 100%,#3eb489 100%, #2d9c7a 100%, #1b6e52 100%);
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+    }
+    .progress-bar-container.hidden {
+      display: none;
+    }
+    #progress-bar {
+      width: 300px;
+      height: 20px;
+      margin-top: 20px;
+    }
+    label {
+      color: #fff;
+      font-size: 2rem;
+      font-family: sans-serif;
+      transition: all 0.3s;
+      z-index: 10;
+      position: relative;
+    }
+    #loading-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+    #loading-canvas.clickable {
+      cursor: pointer;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.18"></script>
+</head>
+<body>
+  <div id="debug">
+    กด F = สลับโหมดติดตามรถ<br>
+    กด ESC = ปลดล็อคกล้อง<br>
+    WASD = ขับรถ<br>
+    คลิกลาก = หมุนกล้อง<br>
+    ล้อเมาส์ = ซูม
+  </div>
+
+  <div id="overlay" class="progress-bar-container">
+    <canvas id="loading-canvas"></canvas>
+    <label for="progress-bar">Loading...</label>
+    <progress id="progress-bar" value="0" max="100"></progress>
+  </div>
+
+  <div id="dialog" class="dialog-box hidden">
+    <div class="dialog-content">
+      <p id="dialog-text">สวัสดี! ฉันคือ Maid NPC 👋</p>
+      <button id="dialog-close">ปิด</button>
+    </div>
+  </div>
+
+  <script>
+    const overlay = document.getElementById('overlay');
+    const progressBar = document.getElementById('progress-bar');
+    const loadingLabel = overlay.querySelector('label');
+
+    let isLoadingComplete = false;
+    let loadingScene, loadingCamera, loadingRenderer;
+    let startButtonModel;
+
+    const loadingManager = new THREE.LoadingManager(
+      () => {
+        isLoadingComplete = true;
+        loadingLabel.style.display = 'none';
+        progressBar.style.display = 'none';
+        
+        const startButtonLoader = new THREE.GLTFLoader();
+        startButtonLoader.load('https://psorrayut.github.io/sorrayut/startfont.glb',
+          (gltf) => {
+            startButtonModel = gltf.scene;
+            startButtonModel.position.set(-5, 2, 0);
+            startButtonModel.scale.set(1.5, 1.5, 1.5);
+            loadingScene.add(startButtonModel);
+          }
+        );
+      },
+      (url, itemsLoaded, itemsTotal) => {
+        const progress = (itemsLoaded / itemsTotal) * 100;
+        progressBar.value = progress;
+      },
+      (url) => { 
+        console.error('Error loading ' + url); 
+      }
+    );
+    
+    loadingRenderer = new THREE.WebGLRenderer({ 
+      canvas: document.getElementById('loading-canvas'),
+      antialias: true,
+      alpha: true
+    });
+    loadingRenderer.setSize(window.innerWidth, window.innerHeight);
+    loadingRenderer.outputEncoding = THREE.sRGBEncoding;
+
+    loadingScene = new THREE.Scene();
+    loadingCamera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    loadingCamera.position.set(0, 2, 5);
+
+    const loadingLight = new THREE.DirectionalLight(0xffffff, 1);
+    loadingLight.position.set(5, 5, 5);
+    loadingScene.add(loadingLight);
+    loadingScene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.shadowMap.enabled = true;
+    renderer.physicallyCorrectLights = true;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene(); 
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 20, 8);
+    
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableZoom = true;
+    controls.zoomSpeed = 1.5;
+    controls.minDistance = 2;
+    controls.maxDistance = 100;
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.maxPolarAngle = Math.PI / 2.2;
+    controls.enablePan = true;
+    controls.panSpeed = 1.0;
+
+    const hemiLight = new THREE.HemisphereLight(0xffe08a, 0xff6f61, 0.6);
+    scene.add(hemiLight);
+    
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+    scene.add(ambientLight);
+    
+    const light = new THREE.DirectionalLight(0xFFAA33, 0.6);
+    light.position.set(20, 30, 10);
+    light.castShadow = true;
+    light.shadow.mapSize.set(2048, 2048);
+    light.shadow.camera.left = -50;
+    light.shadow.camera.right = 50;
+    light.shadow.camera.top = 50;
+    light.shadow.camera.bottom = -50;
+    scene.add(light);
+    
+    const sunLight = new THREE.DirectionalLight(0xffffff, 3);
+    sunLight.position.set(50, 100, 50);
+    sunLight.castShadow = true;
+    scene.add(sunLight);
+
+    const uniforms = {
+      uColor: { value: new THREE.Color(0xFFA570) },
+      uLightDir: { value: new THREE.Vector3(0.5, 1.0, 0.3).normalize() },
+      uTime: { value: 0.0 }
+    };
+    
+    scene.add(new THREE.AmbientLight(0xFFD4A3, 0.3));
+    scene.add(new THREE.AmbientLight(0x404040, 0.5));
+
+    const diamondVert = `
+      uniform float uTime;
+      varying vec3 vNormal;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vec3 pos = position;
+        pos.y += sin(uTime * 2.0) * 0.2;
+        float angle = sin(uTime) * 0.5; 
+        mat3 rotY = mat3(
+          cos(angle), 0.0, sin(angle),
+          0.0, 1.0, 0.0,
+          -sin(angle), 0.0, cos(angle)
+        );
+        pos = rotY * pos;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+      }
+    `;
+
+    const diamondFrag = `
+      varying vec3 vNormal;
+      void main() {
+        float g = dot(vNormal, vec3(0.0, 1.0, 0.0)) * 0.5 + 0.5;
+        vec3 color = mix(vec3(1.0, 0.2, 0.6), vec3(1.0, 0.6, 0.9), g);
+        gl_FragColor = vec4(color, 1.0);
+      }
+    `;
+
+    const cellVert = `
+      varying vec3 vNormal;
+      varying vec3 vViewPosition;
+      varying vec2 vUv;
+
+      void main() {
+        vUv = uv;
+        vNormal = normalize(normalMatrix * normal);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        vViewPosition = -mvPosition.xyz;
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `;
+
+    const cellFrag = `
+      precision mediump float;
+      
+      uniform sampler2D map;
+      uniform vec3 uLightDir;
+      uniform vec3 baseColor;
+      uniform float levels;
+      
+      varying vec3 vNormal;
+      varying vec3 vViewPosition;
+      varying vec2 vUv;
+
+      void main() {
+        vec4 texColor = texture2D(map, vUv);
+        
+        vec3 normal = normalize(vNormal);
+        float NdotL = max(dot(normal, uLightDir), 0.0);
+        
+        float toonLevel = floor(NdotL * levels) / levels;
+        toonLevel = max(toonLevel, 0.3);
+        
+        vec3 viewDir = normalize(vViewPosition);
+        vec3 reflectDir = reflect(-uLightDir, normal);
+        float specular = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
+        specular = step(0.5, specular) * 0.3;
+        
+        vec3 finalColor = texColor.rgb * toonLevel + vec3(specular);
+        
+        float rim = 1.0 - max(dot(viewDir, normal), 0.0);
+        rim = smoothstep(0.6, 1.0, rim);
+        finalColor += rim * vec3(0.1, 0.1, 0.15) * 0.5;
+        
+        gl_FragColor = vec4(finalColor, texColor.a);
+      }
+    `;
+
+   let car, mixerCar, mixerMaid, maid, mixerfont, fontname, mixerport, mixercat, cat, rig, mixerrig, font2, mixerfont2, gundam, klee, mixerklee, aboutme, aboutmePopup,credit, creditPopup,credit2,creditPopup2,credit3,creditPopup3,credit4,creditPopup4;
+    const clickable = [];
+    let isAboutmeVisible = false;
+    let isCreditVisible = false;
+    let isCreditVisible2 = false;
+    let isCreditVisible3 = false;
+    let isCreditVisible4 = false;
+    let cameraTarget = new THREE.Vector3();
+    let cameraPosition = new THREE.Vector3();
+    let isAutoCamera = false;
+    let followCar = true;
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+
+    function setPointer(e) {
+      const r = renderer.domElement.getBoundingClientRect();
+      const x = (e.clientX ?? e.touches[0].clientX) - r.left;
+      const y = (e.clientY ?? e.touches[0].clientY) - r.top;
+      pointer.x = (x / r.width) * 2 - 1;
+      pointer.y = -(y / r.height) * 2 + 1;
+    }
+
+    function onPick(e) {
+      e.preventDefault();
+      setPointer(e);
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(clickable, true);
+
+      if (hits.length === 0) return;
+
+      const hit = hits[0];
+      isAutoCamera = true;
+      controls.enabled = false;
+      followCar = false;
+
+      let targetObject = hit.object;
+      while (targetObject.parent && targetObject.parent.type !== 'Scene') {
+        targetObject = targetObject.parent;
+      }
+
+      let targetPos;
+      if (hit.object.name === 'maid_marker' && maid) {
+        if (aboutmePopup && !isAboutmeVisible) {
+          aboutmePopup.visible = true;
+          isAboutmeVisible = true;
+        }
+        if (creditPopup3 && !isCreditVisible3) {
+        creditPopup3.visible = true;
+        isCreditVisible3 = true;
+      }
+      if (creditPopup4 && !isCreditVisible4) {
+        creditPopup4.visible = true;
+        isCreditVisible4 = true;
+      }
+        targetPos = maid.position.clone();
+       cameraTarget.copy(targetPos);
+      cameraPosition.set(targetPos.x - 5, targetPos.y + 3, targetPos.z);
+      } 
+      if (hit.object.name === 'credit3_mesh' && credit3) {
+      window.open('https://sketchfab.com/3d-models/merchant-ba5ade3418284ec891a3587350008b9d', '_blank');
+      }
+      if (hit.object.name === 'credit4_mesh' && credit4) {
+      window.open('https://sketchfab.com/3d-models/flying-car-43ddf77cd3454477b226661ef0aaeddd', '_blank');
+      }
+      let targetPos2;
+      if (hit.object.name === 'gundam_marker' && gundam) {
+      // แสดง credit popup
+      if (creditPopup && !isCreditVisible) {
+      creditPopup.visible = true;
+      isCreditVisible = true;
+    }
+      const dialog = document.getElementById('dialog');
+      const dialogText = document.getElementById('dialog-text');
+      dialogText.textContent = "นี้คือโมเดล ที่แสดงผล PBR";
+      dialog.classList.remove('hidden');
+      targetPos2 = gundam.position.clone();
+      const box = new THREE.Box3().setFromObject(gundam);
+     const center = box.getCenter(new THREE.Vector3());
+      cameraTarget.copy(targetPos2);
+      cameraPosition.set(targetPos2.x -14, targetPos2.y +10, targetPos2.z);
+    }
+    if (hit.object.name === 'credit_mesh' && credit) {
+      window.open('https://sketchfab.com/3d-models/gu-gu-gundam-test-10586ada9e664ac4b98399f570ce8fdf#download', '_blank');
+    }
+      let targetPos3;
+      if (hit.object.name === 'klee_marker' && klee) {
+         if (creditPopup2 && !isCreditVisible2) {
+        creditPopup2.visible = true;
+        isCreditVisible2 = true;
+        }
+        const dialog = document.getElementById('dialog');
+        const dialogText = document.getElementById('dialog-text');
+        dialogText.textContent = "นี้คือโมเดล ที่แสดงผล Cel shading";
+        dialog.classList.remove('hidden');
+        targetPos3 = klee.position.clone();
+        const box = new THREE.Box3().setFromObject(klee);
+        const center = box.getCenter(new THREE.Vector3());
+        cameraTarget.copy(targetPos3);
+        cameraPosition.set(targetPos3.x -18, targetPos3.y +25, targetPos3.z);
+      }
+      if (hit.object.name === 'credit2_mesh' && credit2) {
+      window.open('https://sketchfab.com/3d-models/klee-genshin-impact-6d4aa4cbace34c4d999c94a2f2c61fcd#download', '_blank');
+    }
+       let targetPos4;
+      if (hit.object.name === 'cat_marker' && cat) {
+        const dialog = document.getElementById('dialog');
+        const dialogText = document.getElementById('dialog-text');
+        dialogText.textContent = "นี้คือโมเดล ที่ผมลองปั้นเอง";
+        dialog.classList.remove('hidden');
+        targetPos4 = cat.position.clone();
+        const box = new THREE.Box3().setFromObject(cat);
+        const center = box.getCenter(new THREE.Vector3());
+        cameraTarget.copy(targetPos4);
+        cameraPosition.set(targetPos4.x -10, targetPos4.y +4, targetPos4.z);
+      }
+      let targetPos5;
+      if (hit.object.name === 'rig_marker' && rig) {
+        const dialog = document.getElementById('dialog');
+        const dialogText = document.getElementById('dialog-text');
+        dialogText.textContent = "นี้คือโมเดล ที่ผมลองปั้นเอง";
+        dialog.classList.remove('hidden');
+        targetPos5 = rig.position.clone();
+        const box = new THREE.Box3().setFromObject(rig);
+        const center = box.getCenter(new THREE.Vector3());
+        cameraTarget.copy(targetPos5);
+        cameraPosition.set(targetPos5.x -10, targetPos5.y +18, targetPos5.z);
+      }
+      if ((hit.object.name === 'aboutme_mesh' || hit.object.parent?.name === 'aboutme') && fontname) {
+        const dialog = document.getElementById('dialog');
+        const dialogText = document.getElementById('dialog-text');
+        dialogText.textContent = "ยินดีต้อนรับสู่พอร์ตโฟลิโอของฉัน!";
+        dialog.classList.remove('hidden');
+        
+        const logoPos = new THREE.Vector3(-100, 4, -20);
+        cameraTarget.copy(logoPos);
+        cameraPosition.set(-160, 18, -20);
+      }
+     
+    }
+
+    document.getElementById('dialog-close').addEventListener('click', () => {
+      document.getElementById('dialog').classList.add('hidden');
+      
+      if (aboutmePopup) {
+        aboutmePopup.visible = false;
+        isAboutmeVisible = false;
+      }
+      
+      isAutoCamera = false;
+      followCar = true;
+
+      controls.enabled = false;
+      if (creditPopup) {
+        creditPopup.visible = false;
+        isCreditVisible= false;
+      }
+      
+      isAutoCamera = false;
+      followCar = true;
+      controls.enabled = false;
+      if (creditPopup2) {
+        creditPopup2.visible = false;
+        isCreditVisible= false;
+      }
+      
+      isAutoCamera = false;
+      followCar = true;
+      controls.enabled = false;
+    });
+
+    renderer.domElement.addEventListener('click', onPick);
+    renderer.domElement.addEventListener('touchend', (e) => { onPick(e); }, { passive: true });
+    renderer.domElement.addEventListener('mousemove', (e) => {
+      setPointer(e);
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(clickable, true);
+      renderer.domElement.style.cursor = hits.length > 0 ? 'pointer' : 'default';
+    });
+
+    const keys = {};
+    document.addEventListener('keydown', (e) => { 
+      keys[e.key.toLowerCase()] = true;
+      if (e.key.toLowerCase() === 'f') {
+        followCar = !followCar;
+        controls.enabled = !followCar;
+        console.log('Follow Car:', followCar ? 'ON' : 'OFF');
+      }
+    });
+    document.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+
+    const speed = 0.1;
+    const rotateSpeed = 0.04;
+
+    function updateCar() {
+      if (!car) return;
+
+      if (keys['w'] || keys['s'] || keys['a'] || keys['d']) {
+        if (!followCar) {
+          followCar = true;
+          controls.enabled = false;
+        }
+      }
+
+      if (keys['escape']) {
+        isAutoCamera = false;
+        followCar = false;
+        controls.enabled = true;
+      }
+
+      if (keys['w']) {
+        car.position.x += speed * Math.sin(car.rotation.y);
+        car.position.z += speed * Math.cos(car.rotation.y);
+      }
+      if (keys['s']) {
+        car.position.x -= speed * Math.sin(car.rotation.y);
+        car.position.z -= speed * Math.cos(car.rotation.y);
+      }
+      if (keys['a']) { car.rotation.y += rotateSpeed; }
+      if (keys['d']) { car.rotation.y -= rotateSpeed; }
+    }
+
+    function updateCamera() {
+      if (!car) return;
+      
+      if (isAutoCamera) {
+        camera.position.lerp(cameraPosition, 0.05);
+        controls.target.lerp(cameraTarget, 0.05);
+      } else if (followCar) {
+        const offset = new THREE.Vector3(
+          -Math.sin(car.rotation.y) * 8,
+          3,
+          -Math.cos(car.rotation.y) * 8
+        );
+        const targetPos = car.position.clone().add(offset);
+        camera.position.lerp(targetPos, 0.1);
+        controls.target.lerp(car.position, 0.1);
+      }
+    }
+
+    const carLoader = new THREE.GLTFLoader(loadingManager);
+    carLoader.load('https://psorrayut.github.io/sorrayut/flyingcar.glb',
+      function (gltf) {
+        car = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerCar = new THREE.AnimationMixer(car);
+          gltf.animations.forEach((clip) => {
+            mixerCar.clipAction(clip).play();
+          });
+        }
+        car.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        car.rotation.y = Math.PI / 2;
+        car.position.set(0, 0.5, 10);
+        scene.add(car);
+      }
+    );
+
+    const rigLoader = new THREE.GLTFLoader(loadingManager);
+    rigLoader.load('https://psorrayut.github.io/sorrayut/rigging2.glb',
+      function (gltf) {
+        rig = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerrig = new THREE.AnimationMixer(rig);
+          gltf.animations.forEach((clip) => {
+            mixerrig.clipAction(clip).play();
+          });
+        }
+        rig.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        rig.rotation.y = -Math.PI / 2;
+        rig.position.set(50, 4, 20);
+        scene.add(rig);
+         const markerGeo5= new THREE.OctahedronGeometry(0.6, 0);
+        const markerMat5 = new THREE.ShaderMaterial({
+          vertexShader: diamondVert,
+          fragmentShader: diamondFrag,
+          uniforms,
+          side: THREE.DoubleSide,
+        });
+        const marker5 = new THREE.Mesh(markerGeo5, markerMat5);
+        marker5.position.set(35,8,20);
+        marker5.scale.set(1, 1, 1);
+        marker5.name = 'rig_marker';
+        scene.add(marker5);
+        clickable.push(marker5);
+      }
+    );
+
+    const catLoader = new THREE.GLTFLoader(loadingManager);
+    catLoader.load('https://psorrayut.github.io/sorrayut/cat7.glb',
+      function (gltf) {
+        cat = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixercat = new THREE.AnimationMixer(cat);
+          gltf.animations.forEach((clip) => {
+            mixercat.clipAction(clip).play();
+          });
+        }
+        cat.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        cat.rotation.y = -Math.PI / 2;
+        cat.scale.set(3, 3, 3);
+        cat.position.set(50, 4, 0);
+        scene.add(cat);
+         const markerGeo4 = new THREE.OctahedronGeometry(0.6, 0);
+        const markerMat4 = new THREE.ShaderMaterial({
+          vertexShader: diamondVert,
+          fragmentShader: diamondFrag,
+          uniforms,
+          side: THREE.DoubleSide,
+        });
+        const marker4 = new THREE.Mesh(markerGeo4, markerMat4);
+        marker4.position.set(50,14,0);
+        marker4.scale.set(1, 1, 1);
+        marker4.name = 'cat_marker';
+        scene.add(marker4);
+        clickable.push(marker4);
+      }
+    );
+       const signLoader = new THREE.GLTFLoader(loadingManager);
+      signLoader.load('https://psorrayut.github.io/sorrayut/sign.glb',
+      function (gltf) {
+        const sign = gltf.scene;
+        sign.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+          }
+        });
+        sign.rotation.y = -Math.PI / 2;
+        sign.scale.set(2,2,2);
+        sign.position.set(30, -3, 5);
+        scene.add(sign);
+      }
+    );
+    const kleeLoader = new THREE.GLTFLoader(loadingManager);
+    kleeLoader.load('https://psorrayut.github.io/sorrayut/klee2.glb',
+      function (gltf) {
+        klee = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerklee = new THREE.AnimationMixer(klee);
+          gltf.animations.forEach((clip) => {
+            mixerklee.clipAction(clip).play();
+          });
+        }
+        klee.traverse((child) => {
+          if (child.isMesh) {
+            const oldMat = child.material;
+            
+            child.material = new THREE.ShaderMaterial({
+              uniforms: {
+                map: { value: oldMat.map },
+                uLightDir: { value: new THREE.Vector3(0.5, 1.0, 0.3).normalize() },
+                baseColor: { value: oldMat.color || new THREE.Color(1, 1, 1) },
+                levels: { value: 5.0 },
+                sunLightDir: { value: new THREE.Vector3(0, -1, 0) },
+                sunIntensity: { value: 1.5 }
+              },
+              vertexShader: cellVert,
+              fragmentShader: cellFrag,
+              side: THREE.DoubleSide
+            });
+            
+            child.castShadow = true;
+            child.receiveShadow = true;
+            child.material.needsUpdate = true;
+          }
+        });
+        klee.rotation.y = -Math.PI / 2;
+        klee.scale.set(10, 10, 10);
+        klee.position.set(50, 4, 50);
+        scene.add(klee);
+
+        const kleeLight = new THREE.DirectionalLight(0xFFE5B4, 2);
+        kleeLight.position.set(50, 25, 50);
+        kleeLight.target.position.copy(klee.position);
+        kleeLight.castShadow = true;
+        scene.add(kleeLight);
+        scene.add(kleeLight.target);
+
+        const sunGeo = new THREE.SphereGeometry(1.5, 32, 32);
+        const sunMat = new THREE.MeshBasicMaterial({ 
+          color: 0xFFF4E0,
+          emissive: 0xFFAA33,
+          emissiveIntensity: 2
+        });
+        const kleeSun = new THREE.Mesh(sunGeo, sunMat);
+        kleeSun.position.set(50, 25, 50);
+        scene.add(kleeSun);
+
+        const glowGeo = new THREE.SphereGeometry(2, 32, 32);
+        const glowMat = new THREE.MeshBasicMaterial({ 
+          color: 0xFFDD88,
+          transparent: true,
+          opacity: 0.3,
+          side: THREE.BackSide
+        });
+        const sunGlow = new THREE.Mesh(glowGeo, glowMat);
+        sunGlow.position.set(50, 25, 50);
+        scene.add(sunGlow);
+
+        const markerGeo3 = new THREE.OctahedronGeometry(0.6, 0);
+        const markerMat3 = new THREE.ShaderMaterial({
+          vertexShader: diamondVert,
+          fragmentShader: diamondFrag,
+          uniforms,
+          side: THREE.DoubleSide,
+        });
+        const marker3 = new THREE.Mesh(markerGeo3, markerMat3);
+        marker3.position.set(35,-2,50);
+        marker3.scale.set(2, 2, 2);
+        marker3.position.y += 15;
+        marker3.name = 'klee_marker';
+        scene.add(marker3);
+        clickable.push(marker3);
+      }
+    );
+
+    const textureLoader = new THREE.TextureLoader(loadingManager);
+    const bgfont = textureLoader.load('https://psorrayut.github.io/sorrayut/heart pixel art 254x254.png');
+    bgfont.magFilter = THREE.NearestFilter;
+    bgfont.minFilter = THREE.NearestFilter;
+
+    const font = new THREE.GLTFLoader(loadingManager);
+    font.load('https://psorrayut.github.io/sorrayut/fontname2.glb',
+      function (gltf) {
+        fontname = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerfont = new THREE.AnimationMixer(fontname);
+          gltf.animations.forEach((clip) => {
+            const action = mixerfont.clipAction(clip);
+            action.setLoop(THREE.LoopOnce);
+            action.clampWhenFinished = true;
+            action.play();
+          });
+        }
+        fontname.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            if (child.material) {
+              child.material.map = bgfont;
+              child.material.needsUpdate = true;
+            }
+          }
+        });
+        fontname.rotation.y = -Math.PI / 2;
+        fontname.scale.set(4, 4, 4);
+        fontname.position.set(-100, 2, -22);
+        scene.add(fontname);
+      }
+    );
+    
+    const fontloader = new THREE.GLTFLoader(loadingManager);
+    fontloader.load('https://psorrayut.github.io/sorrayut/Name2.glb',
+      function (gltf) {
+        font2 = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerfont2 = new THREE.AnimationMixer(font2);
+          gltf.animations.forEach((clip) => {
+            const action = mixerfont2.clipAction(clip);
+            action.setLoop(THREE.LoopOnce);
+            action.clampWhenFinished = true;
+            action.play();
+          });
+        }
+        font2.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        font2.rotation.y = -Math.PI / 2;
+        font2.scale.set(3, 3, 3);
+        font2.position.set(-100, 5, -29);
+        scene.add(font2);
+      }
+    );
+
+    const logoloader = new THREE.GLTFLoader(loadingManager);
+    logoloader.load('https://psorrayut.github.io/sorrayut/logo.glb',
+      function (gltf) {
+        const logo = gltf.scene;
+        logo.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+          }
+        });
+        logo.rotation.y = -Math.PI / 2;
+        logo.position.set(-100, -8, -40);
+        logo.scale.set(8, 8, 8);
+        scene.add(logo);
+      }
+    );
+       const port = new THREE.GLTFLoader(loadingManager);
+    port.load('https://psorrayut.github.io/sorrayut/port.glb',
+      function (gltf) {
+        const portloader = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerport = new THREE.AnimationMixer(portloader);
+          gltf.animations.forEach((clip) => {
+            const action = mixerport.clipAction(clip);
+            action.setLoop(THREE.LoopOnce);
+            action.clampWhenFinished = true;
+            action.play();
+          });
+        }
+        portloader.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+          }
+        });
+        portloader.rotation.y = -Math.PI / 2;
+        portloader.scale.set(5, 5, 5);
+        portloader.position.set(-100, 8, -40);
+        scene.add(portloader);
+      }
+    );
+    const creditmeloader = new THREE.GLTFLoader(loadingManager);
+    creditmeloader.load('https://psorrayut.github.io/sorrayut/credit.glb',
+      function (gltf) {
+         credit = gltf.scene;
+        credit.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+            child.name = 'credit_mesh';
+          }
+        });
+        credit.rotation.y = -Math.PI / 2;
+        credit.position.set(50, 7, -40);
+        credit.scale.set(2, 2, 2);
+        credit.visible = false;
+        credit.name = 'credit';
+        scene.add(credit);
+        
+        creditPopup = credit;
+        clickable.push(credit);
+      }
+    );
+    const creditmeloader2 = new THREE.GLTFLoader(loadingManager);
+    creditmeloader2.load('https://psorrayut.github.io/sorrayut/credit.glb',
+      function (gltf) {
+         credit2 = gltf.scene;
+        credit2.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+            child.name = 'credit2_mesh';
+          }
+        });
+        credit2.rotation.y = -Math.PI / 2;
+        credit2.position.set(50, 10, 60);
+        credit2.scale.set(4, 4, 4);
+        credit2.visible = false;
+        credit2.name = 'credit2';
+        scene.add(credit2);
+        
+        creditPopup2 = credit2;
+        clickable.push(credit2);
+      }
+    );
+    const creditmeloader3 = new THREE.GLTFLoader(loadingManager);
+    creditmeloader3.load('https://psorrayut.github.io/sorrayut/creditmaid.glb',
+    function (gltf) {
+     credit3 = gltf.scene;
+    credit3.traverse(function (child) {
+      if (child.isMesh) {
+        child.receiveShadow = true;
+        child.castShadow = true;
+        child.name = 'credit3_mesh';
+      }
+    });
+    credit3.rotation.y = -Math.PI / 2;
+    credit3.position.set(-2, 1, 2);
+    credit3.scale.set(1, 1, 1);
+    credit3.visible = false;
+    credit3.name = 'credit3';
+    scene.add(credit3);
+    creditPopup3 = credit3;
+    clickable.push(credit3);
+  }
+);
+ const creditmeloader4 = new THREE.GLTFLoader(loadingManager);
+    creditmeloader4.load('https://psorrayut.github.io/sorrayut/creditcar.glb',
+    function (gltf) {
+     credit4 = gltf.scene;
+    credit4.traverse(function (child) {
+      if (child.isMesh) {
+        child.receiveShadow = true;
+        child.castShadow = true;
+        child.name = 'credit4_mesh';
+      }
+    });
+    credit4.rotation.y = -Math.PI / 2;
+    credit4.position.set(-2, 0, 2);
+    credit4.scale.set(1, 1, 1);
+    credit4.visible = false;
+    credit4.name = 'credit4';
+    scene.add(credit4);
+    creditPopup4 = credit4;
+    clickable.push(credit4);
+  }
+);
+    const aboutmeloader = new THREE.GLTFLoader(loadingManager);
+    aboutmeloader.load('https://psorrayut.github.io/sorrayut/aboutme.glb',
+      function (gltf) {
+        aboutme = gltf.scene;
+        aboutme.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+            child.name = 'aboutme_mesh';
+          }
+        });
+        aboutme.rotation.y = -Math.PI / 2;
+        aboutme.position.set(-2, 3, 2);
+        aboutme.scale.set(1, 1, 1);
+        aboutme.visible = false;
+        aboutme.name = 'aboutme';
+        scene.add(aboutme);
+        
+        aboutmePopup = aboutme;
+        clickable.push(aboutme);
+      }
+    );
+
+    const maidLoader = new THREE.GLTFLoader(loadingManager);
+    maidLoader.load('https://psorrayut.github.io/sorrayut/merchant.glb',
+      function (gltf) {
+        maid = gltf.scene;
+        if (gltf.animations && gltf.animations.length > 0) {
+          mixerMaid = new THREE.AnimationMixer(maid);
+          gltf.animations.forEach((clip) => {
+            mixerMaid.clipAction(clip).play();
+          });
+        }
+        maid.traverse(function (child) {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            child.name = 'maid_mesh';
+            clickable.push(child);
+          }
+        });
+        maid.rotation.y = -Math.PI / 2;
+        maid.position.set(-2, 0, 0);
+        maid.name = 'maid';
+        scene.add(maid);
+
+        const markerGeo = new THREE.OctahedronGeometry(0.6, 0);
+        const markerMat = new THREE.ShaderMaterial({
+          vertexShader: diamondVert,
+          fragmentShader: diamondFrag,
+          uniforms,
+          side: THREE.DoubleSide,
+        });
+        const marker = new THREE.Mesh(markerGeo, markerMat);
+        marker.position.copy(maid.position);
+        marker.position.y += 5;
+        scene.add(marker);
+
+        const maidLight = new THREE.PointLight(0xff0000, 1, 10);
+        maidLight.position.copy(maid.position);
+        maidLight.position.y += 3;
+        scene.add(maidLight);
+
+        marker.name = 'maid_marker';
+        clickable.push(marker);
+      }
+    );
+
+    const bgLoader = new THREE.GLTFLoader(loadingManager);
+    bgLoader.load('https://psorrayut.github.io/sorrayut/bg2.glb',
+      function (gltf) {
+        const bgModel = gltf.scene;
+        bgModel.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+          }
+        });
+        bgModel.position.set(0, 0, 0);
+        scene.add(bgModel);
+      }
+    );
+      const textsceneLoader = new THREE.GLTFLoader(loadingManager);
+      textsceneLoader.load('https://psorrayut.github.io/sorrayut/scene5.glb',
+      function (gltf) {
+        const ff = gltf.scene;
+        ff.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+          }
+        });
+        ff.rotation.y = -Math.PI / 2;
+        ff.scale.set(5,5,5);
+        ff.position.set(-80, 0, 0);
+        scene.add(ff);
+      }
+    );
+    const gundamLoader = new THREE.GLTFLoader(loadingManager);
+    gundamLoader.load('https://psorrayut.github.io/sorrayut/gundam.glb',
+      function (gltf) {
+        gundam = gltf.scene;
+        gundam.traverse(function (child) {
+          if (child.isMesh) {
+            child.receiveShadow = true;
+            child.castShadow = true;
+            
+            if (child.material) {
+              if (child.material.isMeshStandardMaterial || child.material.isMeshPhysicalMaterial) {
+                child.material.envMapIntensity = 1.5;
+                child.material.needsUpdate = true;
+              }
+            }
+          }
+        });
+        gundam.rotation.y = -Math.PI / 2;
+        gundam.position.set(50, 0, -30);
+        gundam.scale.set(20, 20, 20);
+        scene.add(gundam);
+
+        const gundamLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        gundamLight.position.set(50, 20, -20);
+        gundamLight.target.position.copy(gundam.position);
+        gundamLight.castShadow = true;
+        scene.add(gundamLight);
+        scene.add(gundamLight.target);
+
+        const gundamPointLight = new THREE.PointLight(0x4488ff, 2, 30);
+        gundamPointLight.position.set(50, 10, -30);
+        scene.add(gundamPointLight);
+
+        const markerGeo2 = new THREE.OctahedronGeometry(0.6, 0);
+        const markerMat2 = new THREE.ShaderMaterial({
+          vertexShader: diamondVert,
+          fragmentShader: diamondFrag,
+          uniforms,
+          side: THREE.DoubleSide,
+        });
+        const marker2 = new THREE.Mesh(markerGeo2, markerMat2);
+        marker2.position.copy(gundam.position);
+        marker2.scale.set(2, 2, 2);
+        marker2.position.y += 15;
+        marker2.name = 'gundam_marker';
+        scene.add(marker2);
+        clickable.push(marker2);
+      }
+    );
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      
+      if (loadingCamera && loadingRenderer) {
+        loadingCamera.aspect = innerWidth / innerHeight;
+        loadingCamera.updateProjectionMatrix();
+        loadingRenderer.setSize(innerWidth, innerHeight);
+      }
+    });
+
+    const clock = new THREE.Clock();
+    let gameStarted = false;
+
+    function animateLoading() {
+      if (!gameStarted) {
+        requestAnimationFrame(animateLoading);
+        const delta = clock.getDelta();
+        
+        if (loadingRenderer && loadingScene && loadingCamera) {
+          loadingRenderer.render(loadingScene, loadingCamera);
+        }
+      }
+    }
+    animateLoading();
+
+    const startGame = () => {
+      if (isLoadingComplete && startButtonModel && !gameStarted) {
+        gameStarted = true;
+        overlay.classList.add('hidden');
+        animate();
+      }
+    };
+
+    overlay.addEventListener('click', startGame);
+    document.getElementById('loading-canvas').addEventListener('click', startGame);
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = clock.getDelta();
+      if (mixerCar) mixerCar.update(delta);
+      if (mixerMaid) mixerMaid.update(delta);
+      if (mixerfont) mixerfont.update(delta);
+      if (mixerport) mixerport.update(delta);
+      if (mixercat) mixercat.update(delta);
+      if (mixerrig) mixerrig.update(delta);
+      if (mixerfont2) mixerfont2.update(delta);
+      if (mixerklee) mixerklee.update(delta);
+      uniforms.uTime.value = clock.getElapsedTime();
+      updateCar();
+      updateCamera();
+      controls.update();
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>
